@@ -1,99 +1,95 @@
-#!/usr/bin/python
-#
-# This file is part of IvPID.
-# Copyright (C) 2015 Ivmech Mechatronics Ltd. <bilgi@ivmech.com>
-#
-# IvPID is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# IvPID is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-#title           :test_pid.py
-#description     :python pid controller test
-#author          :Caner Durmusoglu
-#date            :20151218
-#version         :0.1
-#notes           :
-#python_version  :2.7
-#dependencies    : matplotlib, numpy, scipy
-#==============================================================================
-
-import PID
+from vmaPID import PID
 import time
 import matplotlib.pyplot as plt
 import numpy as np
-#from scipy.interpolate import spline
-from scipy.interpolate import BSpline, make_interp_spline #  Switched to BSpline
 
-def test_pid(P = 0.2,  I = 0.0, D= 0.0, L=100):
-    """Self-test PID class
 
-    .. note::
-        ...
-        for i in range(1, END):
-            pid.update(feedback)
-            output = pid.output
-            if pid.SetPoint > 0:
-                feedback += (output - (1/i))
-            if i>9:
-                pid.SetPoint = 1
-            time.sleep(0.02)
-        ---
-    """
-    pid = PID.PID(P, I, D)
+class heater:
+    def __init__(self):
+        self.temp = 25
+    def update(self, power, dt):
+        if power is None:
+            power = 0
+        if power > 0 :
+             
+            #Variation of room temperature with power and time variable dt during heating
+            self.temp += 2 * power * dt
+        #Indicates heat loss in a room
+        self.temp -= 200 * dt
+        return self.temp
 
-    pid.SetPoint=0.0
-    pid.setSampleTime(0.01)
-
-    END = L
-    feedback = 0
-
-    feedback_list = []
-    time_list = []
-    setpoint_list = []
-
-    for i in range(1, END):
-        pid.update(feedback)
-        output = pid.output
-        if pid.SetPoint > 0:
-            feedback += (output - (1/i))
-        if i>9:
-            pid.SetPoint = 1
-        time.sleep(0.02)
-
-        feedback_list.append(feedback)
-        setpoint_list.append(pid.SetPoint)
-        time_list.append(i)
-
-    time_sm = np.array(time_list)
-    time_smooth = np.linspace(time_sm.min(), time_sm.max(), 300)
-
-    # feedback_smooth = spline(time_list, feedback_list, time_smooth)
-    # Using make_interp_spline to create BSpline
-    helper_x3 = make_interp_spline(time_list, feedback_list)
-    feedback_smooth = helper_x3(time_smooth)
-
-    plt.plot(time_smooth, feedback_smooth)
-    plt.plot(time_list, setpoint_list)
-    plt.xlim((0, L))
-    plt.ylim((min(feedback_list)-0.5, max(feedback_list)+0.5))
-    plt.xlabel('time (s)')
-    plt.ylabel('PID (PV)')
-    plt.title('TEST PID')
-
-    plt.ylim((1-0.5, 1+0.5))
-
-    plt.grid(True)
-    plt.show()
 
 if __name__ == "__main__":
-    test_pid(1.2, 1, 0.001, L=50)
-#    test_pid(0.8, L=50)
+    power = 0
+    P = 40
+    I = 4
+    D = 0.1
+    pid = PID(P, I, D)
+
+    pid.setSetPoint(0.0)
+    pid.setSampleTime(0.01)
+    pid.setOutputLimit(1500,0)
+    pid.setWindup('Reset', 0.001) # Teria q testar melhor esse metodo
+    pid.setWindup('Clamp', 20) 
+
+    heater = heater()
+    temp = heater.temp
+
+    start_time = time.time()
+    last_time = start_time
+
+	#Visualize Output Results
+    setpoint, temperatura, t, output = [], [], [], []
+
+    # loop do controle, dura 1
+    while time.time() - start_time < 1:
+        current_time = time.time()
+
+        dt = current_time - last_time
+
+        power = pid.update(temp) # PID recebe estado atual e calcula resposta
+
+        temp = heater.update(power, dt) # envia a potencia calculada ao heater simulado, q devolve nova temperatura atual
+        pid._PID__saturation(1,1,1)
+
+       #Visualize Output Results
+        t += [current_time - start_time]
+        temperatura += [temp]
+        output += [power]
+        setpoint += [pid.SetPoint]
+		#Used for initial value assignment of variable temp
+        if current_time - start_time > 0.1: # inserir o tempo para o passo ocorrer
+            pid.SetPoint = 130
+
+        if current_time - start_time > 0.3: # inserir o tempo para o passo ocorrer
+            pid.SetPoint = 75
+        if current_time - start_time > 0.5: # inserir o tempo para o passo ocorrer
+            pid.SetPoint = 100
+
+        last_time = current_time
+
+    fig, ax1 = plt.subplots()
+
+    ax1.set_xlabel('Tempo (s)')
+    ax1.set_ylabel('Temperatura (C)')
+    lns1 = ax1.plot(t, setpoint, label='Temperatura Desejada / Set Point')
+    lns2 = ax1.plot(t, temperatura, label='Temperatura / State')
+    plt.grid()
+    
+    import sys
+
+    print('setpoint', setpoint[-1])
+    print('temperatura', temperatura[-1])
+    
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Potência (W)')
+    lns3 = ax2.plot(t, output, label='Potência Aplicada / Control Effort', color = 'green')
+    
+    lns = lns1+lns2+lns3
+    labs = [l.get_label() for l in lns]
+    
+    ax1.legend(lns, labs, loc=0)
+    
+    #plt.legend()
+    
+    plt.show()
